@@ -33,7 +33,7 @@ body{
 
 /* ── HERO ── */
 #hero{
-  height:100vh;
+  height:40vh;min-height:260px;
   display:flex;flex-direction:column;
   align-items:center;justify-content:center;
   position:relative;z-index:2;
@@ -179,7 +179,7 @@ body{
 
 /* ── SCROLL DRIVER ── */
 #scroll-driver{position:relative;z-index:1}
-.s-section{height:100vh}
+.s-section{height:60vh}
 
 /* ── FINAL REVEAL ── */
 #final-reveal{
@@ -566,7 +566,11 @@ body{
     });
   }
 
-  function draw(){
+  let atmLast=0;
+  function draw(ts){
+    requestAnimationFrame(draw);
+    if(ts-atmLast<42)return; // ~24fps cap
+    atmLast=ts;
     ctx.clearRect(0,0,W,H);
     const sy=scrollY*.08;
     pts.forEach(p=>{
@@ -578,9 +582,8 @@ body{
       ctx.fillStyle=p.col+p.a+')';
       ctx.fill();
     });
-    requestAnimationFrame(draw);
   }
-  draw();
+  requestAnimationFrame(draw);
 })();
 
 
@@ -639,8 +642,8 @@ function alpha(col,a){
   const b=parseInt(m[1].slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 }
-function glow(col,blur){ctx.shadowColor=col;ctx.shadowBlur=blur;}
-function noglow(){ctx.shadowColor='transparent';ctx.shadowBlur=0;}
+function glow(){}   // shadowBlur removed — use gradient halos
+function noglow(){}
 
 // ── Cached gradients (created once) ──
 const GC={};
@@ -1040,29 +1043,30 @@ function drawHeadlights(a){
   ctx.bezierCurveTo(164,313,150,305,140,292);
   ctx.fill();ctx.stroke();
 
-  // 4 LED projector modules (2×2)
-  glow('#3060d0',12);
+  // 4 LED projector modules (2×2) — halo via radial gradient behind lens
   const mods=[
     [164,290,10],[192,287,10],
     [168,308,10],[196,306,10]
   ];
   mods.forEach(([mx,my,mr],i)=>{
-    // Lens circle
+    // Halo gradient replacing shadowBlur
+    const halo=radialGrad(mx,my,0,mr*2.5,[
+      [0,'rgba(60,120,220,0.35)'],[1,'rgba(60,120,220,0)']
+    ]);
+    ctx.fillStyle=halo;
+    ctx.beginPath();ctx.arc(mx,my,mr*2.5,0,Math.PI*2);ctx.fill();
+    // Lens
     ctx.fillStyle=i<2?'rgba(60,120,220,0.9)':'rgba(40,90,200,0.8)';
     ctx.beginPath();ctx.arc(mx,my,mr,0,Math.PI*2);ctx.fill();
-    // Inner bright spot
     ctx.fillStyle='rgba(160,200,255,0.8)';
     ctx.beginPath();ctx.arc(mx-2,my-2,4,0,Math.PI*2);ctx.fill();
   });
 
-  // DRL strip (thin line across)
-  glow('#6090ff',8);
+  // DRL strip
   ctx.strokeStyle='rgba(130,170,255,0.9)';ctx.lineWidth=2;
   ctx.beginPath();
   ctx.moveTo(145,278);ctx.bezierCurveTo(165,274,195,272,220,276);
   ctx.stroke();
-
-  noglow();
   ctx.restore();
 }
 
@@ -1079,11 +1083,15 @@ function drawCLine(a){
   ctx.stroke();
 
   // The C-Line itself
-  ctx.strokeStyle=GC.cline;ctx.lineWidth=3;
-  glow(C.chromeHi,6);
+  // Soft outer stroke as halo (no shadowBlur)
+  ctx.strokeStyle=alpha(C.chromeHi,0.12);ctx.lineWidth=7;
   ctx.beginPath();
-  ctx.moveTo(507,208);
-  ctx.bezierCurveTo(490,220,470,258,462,295);
+  ctx.moveTo(507,208);ctx.bezierCurveTo(490,220,470,258,462,295);
+  ctx.bezierCurveTo(455,325,460,360,468,390);ctx.stroke();
+  // Main C-line
+  ctx.strokeStyle=GC.cline;ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.moveTo(507,208);ctx.bezierCurveTo(490,220,470,258,462,295);
   ctx.bezierCurveTo(455,325,460,360,468,390);
   ctx.stroke();
 
@@ -1243,13 +1251,11 @@ function drawDiffuser(a){
     ctx.moveTo(x,GY-5);ctx.lineTo(x+30,GY-18);ctx.stroke();
   }
 
-  // Diffuser highlight edge
+  // Diffuser highlight edge — gradient halo strip instead of shadowBlur
+  const dedge=grad(0,GY-16,0,GY-8,[[0,'transparent'],[0.5,alpha(C.blue,0.18)],[1,'transparent']]);
+  ctx.fillStyle=dedge;ctx.fillRect(200,GY-16,760,8);
   ctx.strokeStyle=alpha(C.blue,0.15);ctx.lineWidth=1;
-  glow(C.blue,4);
-  ctx.beginPath();
-  ctx.moveTo(200,GY-12);ctx.lineTo(960,GY-12);
-  ctx.stroke();
-  noglow();
+  ctx.beginPath();ctx.moveTo(200,GY-12);ctx.lineTo(960,GY-12);ctx.stroke();
 
   ctx.restore();
 }
@@ -1300,8 +1306,7 @@ function drawExhaust(a){
 function drawComplete(a){
   ctx.save();ctx.globalAlpha=a;
 
-  // Ground reflection
-  glow(C.blue,20);
+  // Ground reflection (no shadowBlur)
   ctx.fillStyle=GC.groundRefl;
   ctx.fillRect(80,GY,1240,60);
 
