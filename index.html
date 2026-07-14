@@ -632,7 +632,6 @@ function radialGrad(cx,cy,r0,r1,stops){
   return g;
 }
 function alpha(col,a){
-  // Returns a color with alpha set
   const m=col.match(/^#([0-9a-f]{6})$/i);
   if(!m)return col;
   const r=parseInt(m[1].slice(0,2),16);
@@ -640,10 +639,104 @@ function alpha(col,a){
   const b=parseInt(m[1].slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 }
-function glow(col,blur){
-  ctx.shadowColor=col;ctx.shadowBlur=blur;
-}
+function glow(col,blur){ctx.shadowColor=col;ctx.shadowBlur=blur;}
 function noglow(){ctx.shadowColor='transparent';ctx.shadowBlur=0;}
+
+// ── Cached gradients (created once) ──
+const GC={};
+function initGradientCache(){
+  GC.body=grad(0,ROOF_Y,0,GY,[
+    [0,'#222238'],[0.15,'#1a1a2c'],[0.4,'#131420'],[0.75,'#0d0d18'],[1,'#0a0a14']
+  ]);
+  GC.shad=ctx.createRadialGradient(700,GY+5,50,700,GY+5,350);
+  GC.shad.addColorStop(0,'rgba(0,0,10,0.5)');GC.shad.addColorStop(1,'transparent');
+  GC.groundRefl=grad(0,GY,0,GY+60,[
+    [0,'rgba(27,78,155,0.22)'],[1,'transparent']
+  ]);
+  GC.beam=ctx.createLinearGradient(112,310,0,310);
+  GC.beam.addColorStop(0,'rgba(100,160,255,0.14)');
+  GC.beam.addColorStop(0.4,'rgba(80,130,220,0.04)');
+  GC.beam.addColorStop(1,'transparent');
+  GC.cline=grad(507,208,468,390,[
+    [0,C.chromeHi],[0.3,C.chrome],[0.6,'#c8c8d8'],[0.85,C.gold],[1,alpha(C.gold,0.4)]
+  ]);
+  GC.glassFill=ctx.createLinearGradient(460,204,510,290);
+  GC.glassFill.addColorStop(0,'rgba(180,210,240,0.22)');
+  GC.glassFill.addColorStop(0.5,'rgba(140,175,220,0.12)');
+  GC.glassFill.addColorStop(1,'rgba(100,140,200,0.06)');
+  GC.winFill=ctx.createLinearGradient(480,220,600,340);
+  GC.winFill.addColorStop(0,'rgba(160,195,230,0.18)');
+  GC.winFill.addColorStop(1,'rgba(100,140,200,0.06)');
+}
+
+// ── Offscreen wheel canvases ──
+const wheelCache={front:null,rear:null};
+function prerenderWheel(r,isFront){
+  const size=(r+4)*2;
+  const oc=document.createElement('canvas');
+  oc.width=size;oc.height=size;
+  const c=oc.getContext('2d');
+  const cx=r+4,cy=r+4;
+  const spokeCount=9;
+  const innerR=r*.35,outerR=r*.88;
+  // Tyre
+  c.fillStyle=C.rubber;c.strokeStyle=C.rubberEdge;c.lineWidth=2;
+  c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);c.fill();c.stroke();
+  // Tyre sheen
+  const twG=c.createRadialGradient(cx-r*.3,cy-r*.3,r*.05,cx,cy,r);
+  twG.addColorStop(0,'rgba(48,48,64,0.6)');twG.addColorStop(0.7,'transparent');twG.addColorStop(1,'transparent');
+  c.fillStyle=twG;c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);c.fill();
+  // Rim
+  c.fillStyle=C.spoke;c.strokeStyle=C.spokeHi;c.lineWidth=1.5;
+  c.beginPath();c.arc(cx,cy,outerR,0,Math.PI*2);c.fill();c.stroke();
+  // Spokes
+  for(let i=0;i<spokeCount;i++){
+    const ang=(i/spokeCount)*Math.PI*2;
+    const nAng=((i+1)/spokeCount)*Math.PI*2;
+    const sg=c.createLinearGradient(
+      cx+Math.cos(ang)*innerR,cy+Math.sin(ang)*innerR,
+      cx+Math.cos(ang)*outerR,cy+Math.sin(ang)*outerR
+    );
+    sg.addColorStop(0,C.spokeHi);sg.addColorStop(0.3,C.spoke);sg.addColorStop(1,C.spoke);
+    c.fillStyle=sg;
+    c.beginPath();
+    c.moveTo(cx+Math.cos(ang)*innerR,cy+Math.sin(ang)*innerR);
+    c.bezierCurveTo(
+      cx+Math.cos(ang+.12)*innerR*1.8,cy+Math.sin(ang+.12)*innerR*1.8,
+      cx+Math.cos(ang+.08)*outerR*.95,cy+Math.sin(ang+.08)*outerR*.95,
+      cx+Math.cos(nAng-.05)*outerR*.92,cy+Math.sin(nAng-.05)*outerR*.92
+    );
+    c.lineTo(cx+Math.cos(nAng-.18)*innerR*1.1,cy+Math.sin(nAng-.18)*innerR*1.1);
+    c.closePath();c.fill();
+    c.strokeStyle=alpha(C.spokeHi,0.4);c.lineWidth=1;
+    c.beginPath();
+    c.moveTo(cx+Math.cos(ang)*innerR,cy+Math.sin(ang)*innerR);
+    c.lineTo(cx+Math.cos(ang)*outerR*.85,cy+Math.sin(ang)*outerR*.85);
+    c.stroke();
+  }
+  // Centre cap
+  const ccG=c.createLinearGradient(cx-8,cy-8,cx+8,cy+8);
+  ccG.addColorStop(0,'#383850');ccG.addColorStop(1,'#1a1a28');
+  c.fillStyle=ccG;c.strokeStyle=alpha(C.spokeHi,0.8);c.lineWidth=1.5;
+  c.beginPath();c.arc(cx,cy,innerR,0,Math.PI*2);c.fill();c.stroke();
+  c.fillStyle=alpha(C.chromeHi,0.6);
+  c.font=`bold ${Math.round(innerR*.7)}px serif`;
+  c.textAlign='center';c.textBaseline='middle';c.fillText('EB',cx,cy);
+  // Caliper
+  const calAngle=isFront?-0.5:Math.PI+0.5;
+  c.fillStyle=C.caliper;
+  c.beginPath();
+  c.ellipse(cx+Math.cos(calAngle)*r*.6,cy+Math.sin(calAngle)*r*.6,r*.14,r*.26,calAngle+Math.PI/2,0,Math.PI*2);
+  c.fill();
+  c.strokeStyle=alpha(C.blue,0.5);c.lineWidth=1;c.stroke();
+  // Disc
+  c.strokeStyle=alpha('#303035',0.8);c.lineWidth=r*.06;
+  c.beginPath();c.arc(cx,cy,r*.65,0,Math.PI*2);c.stroke();
+  // Rim highlight
+  c.strokeStyle=alpha(C.chromeHi,0.25);c.lineWidth=1;
+  c.beginPath();c.arc(cx,cy,outerR,Math.PI*1.1,Math.PI*1.85);c.stroke();
+  return oc;
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // DRAWING FUNCTIONS — each component
@@ -711,16 +804,11 @@ function drawBody(a){
   }
 
   // Shadow beneath body
-  const shad=ctx.createRadialGradient(700,GY+5,50,700,GY+5,350);
-  shad.addColorStop(0,'rgba(0,0,10,0.5)');shad.addColorStop(1,'transparent');
-  ctx.fillStyle=shad;
+  ctx.fillStyle=GC.shad;
   ctx.fillRect(80,GY-10,1240,100);
 
   // ── MAIN BODY PATH ──
-  const bodyGrad=grad(0,ROOF_Y,0,GY,[
-    [0,'#222238'],[0.15,'#1a1a2c'],[0.4,'#131420'],[0.75,'#0d0d18'],[1,'#0a0a14']
-  ]);
-  ctx.fillStyle=bodyGrad;
+  ctx.fillStyle=GC.body;
   ctx.strokeStyle=C.bodyEdge;ctx.lineWidth=1.5;
 
   ctx.beginPath();
@@ -837,13 +925,8 @@ function drawBody(a){
 function drawGlass(a){
   ctx.save();ctx.globalAlpha=a;
 
-  const glassFill=ctx.createLinearGradient(460,204,510,290);
-  glassFill.addColorStop(0,'rgba(180,210,240,0.22)');
-  glassFill.addColorStop(0.5,'rgba(140,175,220,0.12)');
-  glassFill.addColorStop(1,'rgba(100,140,200,0.06)');
-
   // Windshield
-  ctx.fillStyle=glassFill;
+  ctx.fillStyle=GC.glassFill;
   ctx.strokeStyle=alpha(C.glassBorder,0.8);ctx.lineWidth=1.2;
   ctx.beginPath();
   ctx.moveTo(506,207);// roof front
@@ -869,10 +952,7 @@ function drawGlass(a){
   ctx.stroke();
 
   // Side window (compact teardrop)
-  const winFill=ctx.createLinearGradient(480,220,600,340);
-  winFill.addColorStop(0,'rgba(160,195,230,0.18)');
-  winFill.addColorStop(1,'rgba(100,140,200,0.06)');
-  ctx.fillStyle=winFill;
+  ctx.fillStyle=GC.winFill;
   ctx.strokeStyle=alpha(C.glassBorder,0.6);ctx.lineWidth=1.2;
   ctx.beginPath();
   ctx.moveTo(530,210);// front edge of side glass
@@ -999,10 +1079,7 @@ function drawCLine(a){
   ctx.stroke();
 
   // The C-Line itself
-  const clGrad=grad(507,208,468,390,[
-    [0,C.chromeHi],[0.3,C.chrome],[0.6,'#c8c8d8'],[0.85,C.gold],[1,alpha(C.gold,0.4)]
-  ]);
-  ctx.strokeStyle=clGrad;ctx.lineWidth=3;
+  ctx.strokeStyle=GC.cline;ctx.lineWidth=3;
   glow(C.chromeHi,6);
   ctx.beginPath();
   ctx.moveTo(507,208);
@@ -1063,96 +1140,12 @@ function drawIntake(a){
   ctx.restore();
 }
 
-// 8 & 9. WHEELS — turbine spoke design
+// 8 & 9. WHEELS — blit pre-rendered offscreen canvas
 function drawWheel(cx,cy,r,isFront,a){
+  const oc=isFront?wheelCache.front:wheelCache.rear;
+  if(!oc)return;
   ctx.save();ctx.globalAlpha=a;
-
-  const spokeCount=9;
-  const innerR=r*0.35;
-  const outerR=r*0.88;
-
-  // Tyre
-  ctx.fillStyle=C.rubber;
-  ctx.strokeStyle=C.rubberEdge;ctx.lineWidth=2;
-  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-  // Tyre sidewall sheen
-  const twGrad=radialGrad(cx-r*.3,cy-r*.3,r*.05,r,[
-    [0,alpha('#303040',0.6)],[0.7,'transparent'],[1,'transparent']
-  ]);
-  ctx.fillStyle=twGrad;
-  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
-
-  // Rim ring
-  ctx.fillStyle=C.spoke;
-  ctx.strokeStyle=C.spokeHi;ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.arc(cx,cy,outerR,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-  // Turbine spokes
-  ctx.save();
-  for(let i=0;i<spokeCount;i++){
-    const angle=(i/spokeCount)*Math.PI*2;
-    const nextAngle=((i+1)/spokeCount)*Math.PI*2;
-    ctx.fillStyle=grad(
-      cx+Math.cos(angle)*innerR,cy+Math.sin(angle)*innerR,
-      cx+Math.cos(angle)*outerR,cy+Math.sin(angle)*outerR,
-      [[0,C.spokeHi],[0.3,C.spoke],[1,C.spoke]]
-    );
-    ctx.beginPath();
-    ctx.moveTo(cx+Math.cos(angle)*innerR,cy+Math.sin(angle)*innerR);
-    ctx.bezierCurveTo(
-      cx+Math.cos(angle+.12)*innerR*1.8,cy+Math.sin(angle+.12)*innerR*1.8,
-      cx+Math.cos(angle+.08)*outerR*.95,cy+Math.sin(angle+.08)*outerR*.95,
-      cx+Math.cos(nextAngle-.05)*outerR*.92,cy+Math.sin(nextAngle-.05)*outerR*.92
-    );
-    ctx.lineTo(cx+Math.cos(nextAngle-.18)*innerR*1.1,cy+Math.sin(nextAngle-.18)*innerR*1.1);
-    ctx.closePath();
-    ctx.fill();
-
-    // Spoke highlight
-    ctx.strokeStyle=alpha(C.spokeHi,0.4);ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(cx+Math.cos(angle)*innerR,cy+Math.sin(angle)*innerR);
-    ctx.lineTo(cx+Math.cos(angle)*outerR*.85,cy+Math.sin(angle)*outerR*.85);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Centre cap
-  ctx.fillStyle=grad(cx-8,cy-8,cx+8,cy+8,[[0,'#383850'],[1,'#1a1a28']]);
-  ctx.strokeStyle=alpha(C.spokeHi,0.8);ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.arc(cx,cy,innerR,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-  // BB logo hint (small EB)
-  ctx.fillStyle=alpha(C.chromeHi,0.6);
-  ctx.font=`bold ${Math.round(innerR*.7)}px serif`;
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillText('EB',cx,cy);
-
-  // Brake caliper (visible through spokes)
-  ctx.fillStyle=C.caliper;
-  ctx.beginPath();
-  const calAngle=isFront?-0.5:Math.PI+0.5;
-  ctx.ellipse(
-    cx+Math.cos(calAngle)*r*.6,cy+Math.sin(calAngle)*r*.6,
-    r*.14,r*.26,calAngle+Math.PI/2,0,Math.PI*2
-  );
-  ctx.fill();
-  glow(C.blue,8);
-  ctx.strokeStyle=alpha(C.blue,0.6);ctx.lineWidth=1;
-  ctx.stroke();
-  noglow();
-
-  // Brake disc hint
-  ctx.strokeStyle=alpha('#303035',0.8);ctx.lineWidth=r*.06;
-  ctx.beginPath();ctx.arc(cx,cy,r*.65,0,Math.PI*2);ctx.stroke();
-
-  // Rim outer highlight
-  ctx.strokeStyle=alpha(C.chromeHi,0.25);ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.arc(cx,cy,outerR,Math.PI*1.1,Math.PI*1.85);
-  ctx.stroke();
-
+  ctx.drawImage(oc,cx-(r+4),cy-(r+4));
   ctx.restore();
 }
 
@@ -1308,19 +1301,12 @@ function drawComplete(a){
   ctx.save();ctx.globalAlpha=a;
 
   // Ground reflection
-  glow(C.blue,30);
-  const reflGrad=ctx.createLinearGradient(0,GY,0,GY+60);
-  reflGrad.addColorStop(0,'rgba(27,78,155,0.22)');
-  reflGrad.addColorStop(1,'transparent');
-  ctx.fillStyle=reflGrad;
+  glow(C.blue,20);
+  ctx.fillStyle=GC.groundRefl;
   ctx.fillRect(80,GY,1240,60);
 
   // Headlight beam
-  const beamGrad=ctx.createLinearGradient(80,310,0,310);
-  beamGrad.addColorStop(0,'rgba(100,160,255,0.14)');
-  beamGrad.addColorStop(0.4,'rgba(80,130,220,0.04)');
-  beamGrad.addColorStop(1,'transparent');
-  ctx.fillStyle=beamGrad;
+  ctx.fillStyle=GC.beam;
   ctx.beginPath();
   ctx.moveTo(112,300);
   ctx.lineTo(0,260);ctx.lineTo(0,360);ctx.lineTo(112,340);
@@ -1529,6 +1515,7 @@ function render(){
 
 // Target alphas — lerped toward
 const targets={...alphas};
+let needsRender=true;
 
 function lerp(a,b,t){return a+(b-a)*t}
 function animateAlphas(){
@@ -1542,9 +1529,14 @@ function animateAlphas(){
       alphas[k]=targets[k];
     }
   }
-  render();
+  if(changed||needsRender){render();needsRender=false;}
   requestAnimationFrame(animateAlphas);
 }
+
+// Init caches then start loop
+initGradientCache();
+wheelCache.front=prerenderWheel(FR,true);
+wheelCache.rear=prerenderWheel(RR,false);
 animateAlphas();
 
 // Scroll controller
@@ -1621,7 +1613,7 @@ function onScroll(){
   }
 }
 
-window.addEventListener('scroll',onScroll,{passive:true});
+window.addEventListener('scroll',()=>{needsRender=true;onScroll()},{passive:true});
 onScroll();
 
 // Draw interior after load
